@@ -199,6 +199,58 @@ def by_paddleocr(
     return None, None, None
 
 
+def by_vietocr(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=100000,
+    lang="Vietnamese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    vietocr_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    pdf_parser = None
+    if tenant_id:
+        if not vietocr_llm_name:
+            try:
+                from api.db.services.tenant_llm_service import TenantLLMService
+
+                env_name = TenantLLMService.ensure_vietocr_from_env(tenant_id)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="VietOCR", model_type=LLMType.OCR)
+                if candidates:
+                    vietocr_llm_name = candidates[0].llm_name
+                elif env_name:
+                    vietocr_llm_name = env_name
+            except Exception as e:  # best-effort fallback
+                logging.warning(f"Failed to query VietOCR tenant LLM, falling back to env config: {e}")
+
+        if vietocr_llm_name:
+            try:
+                ocr_model = LLMBundle(tenant_id=tenant_id, llm_type=LLMType.OCR, llm_name=vietocr_llm_name, lang=lang)
+                pdf_parser = ocr_model.mdl
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    from_page=from_page,
+                    to_page=to_page,
+                    **kwargs,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle VietOCR ({vietocr_llm_name}): {e}")
+
+        return None, None, None
+
+    if callback:
+        callback(-1, "VietOCR not found.")
+    return None, None, None
+
+
 def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
     if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
@@ -225,6 +277,7 @@ PARSERS = {
     "docling": by_docling,
     "tcadp": by_tcadp,
     "paddleocr": by_paddleocr,
+    "vietocr": by_vietocr,
     "plaintext": by_plaintext,  # default
 }
 

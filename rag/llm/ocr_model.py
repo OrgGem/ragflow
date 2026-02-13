@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
+from deepdoc.parser.vietocr_parser import VietOCRParser
 
 
 class Base:
@@ -145,4 +146,63 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
             raise RuntimeError(f"PaddleOCR server not accessible: {reason}")
 
         sections, tables = PaddleOCRParser.parse_pdf(self, filepath=filepath, binary=binary, callback=callback, parse_method=parse_method, **kwargs)
+        return sections, tables
+
+
+class VietOCROcrModel(Base, VietOCRParser):
+    _FACTORY_NAME = "VietOCR"
+
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
+        Base.__init__(self, key, model_name, **kwargs)
+        raw_config = {}
+        if key:
+            try:
+                raw_config = json.loads(key)
+            except Exception:
+                raw_config = {}
+
+        # nested {"api_key": {...}} from UI
+        # flat {"VIETOCR_*": "..."} payload auto-provisioned from env vars
+        config = raw_config.get("api_key", raw_config)
+        if not isinstance(config, dict):
+            config = {}
+
+        def _resolve_config(key: str, env_key: str, default=""):
+            # lower-case keys (UI), upper-case VIETOCR_* (env auto-provision), env vars
+            return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
+
+        self.vietocr_device = _resolve_config("vietocr_device", "VIETOCR_DEVICE", "cpu")
+        self.vietocr_model_name = _resolve_config("vietocr_model_name", "VIETOCR_MODEL_NAME", "vgg_transformer")
+
+        # Redact sensitive config keys before logging
+        redacted_config = {}
+        for k, v in config.items():
+            if any(sensitive_word in k.lower() for sensitive_word in ("key", "password", "token", "secret")):
+                redacted_config[k] = "[REDACTED]"
+            else:
+                redacted_config[k] = v
+        logging.info(f"Parsed VietOCR config (sensitive fields redacted): {redacted_config}")
+
+        VietOCRParser.__init__(
+            self,
+            device=self.vietocr_device,
+            model_name=self.vietocr_model_name,
+        )
+
+    def check_available(self) -> tuple[bool, str]:
+        return self.check_installation()
+
+    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"VietOCR not available: {reason}")
+
+        sections, tables = VietOCRParser.parse_pdf(
+            self,
+            filepath=filepath,
+            binary=binary,
+            callback=callback,
+            parse_method=parse_method,
+            **kwargs,
+        )
         return sections, tables
