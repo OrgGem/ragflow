@@ -1055,12 +1055,12 @@ export default {
         apiUrlRequired: 'URL API PaddleOCR является обязательным',
       },
       vietocr: {
-        device: 'Device',
-        selectDevice: 'Select Device',
-        modelArch: 'Model Architecture',
-        selectModelArch: 'Select Model Architecture',
-        modelNamePlaceholder: 'For example: vietocr-from-env-1',
-        modelNameRequired: 'Model name is required',
+        device: 'Устройство',
+        selectDevice: 'Выберите устройство',
+        modelArch: 'Архитектура модели',
+        selectModelArch: 'Выберите архитектуру модели',
+        modelNamePlaceholder: 'Например: vietocr-from-env-1',
+        modelNameRequired: 'Название модели обязательно',
       },
     },
     message: {
