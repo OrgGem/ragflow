@@ -1081,27 +1081,6 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     for doc_id in docids:
         cks = [c for c in docs if c["doc_id"] == doc_id]
 
-        if parser_ids[doc_id] != ParserType.PICTURE.value:
-            from rag.graphrag.general.mind_map_extractor import MindMapExtractor
-            mindmap = MindMapExtractor(llm_bdl)
-            try:
-                mind_map = asyncio.run(mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]))
-                mind_map = json.dumps(mind_map.output, ensure_ascii=False, indent=2)
-                if len(mind_map) < 32:
-                    raise Exception("Few content: " + mind_map)
-                cks.append({
-                    "id": get_uuid(),
-                    "doc_id": doc_id,
-                    "kb_id": [kb.id],
-                    "docnm_kwd": doc_nm[doc_id],
-                    "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc_nm[doc_id])),
-                    "content_ltks": rag_tokenizer.tokenize("summary summarize 总结 概况 file 文件 概括"),
-                    "content_with_weight": mind_map,
-                    "knowledge_graph_kwd": "mind_map"
-                })
-            except Exception:
-                logging.exception("Mind map generation error")
-
         vectors = embedding(doc_id, [c["content_with_weight"] for c in cks])
         assert len(cks) == len(vectors)
         for i, d in enumerate(cks):

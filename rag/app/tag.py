@@ -124,19 +124,13 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
 
 def label_question(question, kbs):
     from api.db.services.knowledgebase_service import KnowledgebaseService
-    from rag.graphrag.utils import get_tags_from_cache, set_tags_to_cache
     tags = None
     tag_kb_ids = []
     for kb in kbs:
         if kb.parser_config.get("tag_kb_ids"):
             tag_kb_ids.extend(kb.parser_config["tag_kb_ids"])
     if tag_kb_ids:
-        all_tags = get_tags_from_cache(tag_kb_ids)
-        if not all_tags:
-            all_tags = settings.retriever.all_tags_in_portion(kb.tenant_id, tag_kb_ids)
-            set_tags_to_cache(tags=all_tags, kb_ids=tag_kb_ids)
-        else:
-            all_tags = json.loads(all_tags)
+        all_tags = settings.retriever.all_tags_in_portion(kb.tenant_id, tag_kb_ids)
         tag_kbs = KnowledgebaseService.get_by_ids(tag_kb_ids)
         if not tag_kbs:
             return tags

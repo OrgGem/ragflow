@@ -42,7 +42,6 @@ from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts.generator import cross_languages, keyword_extraction
 from common.string_utils import remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, TaskStatus, FileSource
 from common import settings
@@ -1601,13 +1600,6 @@ async def retrieval_test(tenant_id):
         rerank_mdl = None
         if req.get("rerank_id"):
             rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
-
-        if langs:
-            question = await cross_languages(kb.tenant_id, None, question, langs)
-
-        if req.get("keyword", False):
-            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            question += await keyword_extraction(chat_mdl, question)
 
         ranks = await settings.retriever.retrieval(
             question,

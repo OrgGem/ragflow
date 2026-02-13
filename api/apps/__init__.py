@@ -236,16 +236,43 @@ def logout_user():
     return True
 
 
+_EXCLUDED_APPS = {
+    "dialog_app.py",
+    "conversation_app.py",
+    "search_app.py",
+    "canvas_app.py",
+    "evaluation_app.py",
+    "plugin_app.py",
+    "langfuse_app.py",
+    "mcp_server_app.py",
+    "llm_app.py",
+}
+
+_EXCLUDED_SDK = {
+    "chat.py",
+    "session.py",
+    "agents.py",
+    "dify_retrieval.py",
+}
+
+_EXCLUDED_RESTFUL = {
+    "memory_api.py",
+}
+
+
 def search_pages_path(page_path):
     app_path_list = [
-        path for path in page_path.glob("*_app.py") if not path.name.startswith(".")
+        path for path in page_path.glob("*_app.py")
+        if not path.name.startswith(".") and path.name not in _EXCLUDED_APPS
     ]
     api_path_list = [
-        path for path in page_path.glob("*sdk/*.py") if not path.name.startswith(".")
+        path for path in page_path.glob("*sdk/*.py")
+        if not path.name.startswith(".") and path.name not in _EXCLUDED_SDK
     ]
     app_path_list.extend(api_path_list)
     restful_api_path_list = [
-        path for path in page_path.glob("*restful_apis/*.py") if not path.name.startswith(".")
+        path for path in page_path.glob("*restful_apis/*.py")
+        if not path.name.startswith(".") and path.name not in _EXCLUDED_RESTFUL
     ]
     app_path_list.extend(restful_api_path_list)
     return app_path_list
