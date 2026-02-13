@@ -1054,14 +1054,6 @@ export default {
         modelNameRequired: 'Имя модели является обязательным',
         apiUrlRequired: 'URL API PaddleOCR является обязательным',
       },
-      vietocr: {
-        device: 'Устройство',
-        selectDevice: 'Выберите устройство',
-        modelArch: 'Архитектура модели',
-        selectModelArch: 'Выберите архитектуру модели',
-        modelNamePlaceholder: 'Например: vietocr-from-env-1',
-        modelNameRequired: 'Название модели обязательно',
-      },
     },
     message: {
       registered: 'Зарегистрирован!',

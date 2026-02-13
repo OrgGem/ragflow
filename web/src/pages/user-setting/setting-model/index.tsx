@@ -18,7 +18,6 @@ import {
   useSubmitSpark,
   useSubmitSystemModelSetting,
   useSubmitTencentCloud,
-  useSubmitVietOCR,
   useSubmitVolcEngine,
   useSubmityiyan,
   useVerifySettings,
@@ -33,7 +32,6 @@ import TencentCloudModal from './modal/next-tencent-modal';
 import OllamaModal from './modal/ollama-modal';
 import PaddleOCRModal from './modal/paddleocr-modal';
 import SparkModal from './modal/spark-modal';
-import VietOCRModal from './modal/vietocr-modal';
 import VolcEngineModal from './modal/volcengine-modal';
 import YiyanModal from './modal/yiyan-modal';
 const ModelProviders = () => {
@@ -141,14 +139,6 @@ const ModelProviders = () => {
     paddleocrLoading,
   } = useSubmitPaddleOCR();
 
-  const {
-    vietocrVisible,
-    hideVietOCRModal,
-    showVietOCRModal,
-    onVietOCROk,
-    vietocrLoading,
-  } = useSubmitVietOCR();
-
   const ModalMap = useMemo(
     () => ({
       [LLMFactory.Bedrock]: showBedrockAddingModal,
@@ -161,7 +151,6 @@ const ModelProviders = () => {
       [LLMFactory.AzureOpenAI]: showAzureAddingModal,
       [LLMFactory.MinerU]: showMineruModal,
       [LLMFactory.PaddleOCR]: showPaddleOCRModal,
-      [LLMFactory.VietOCR]: showVietOCRModal,
     }),
     [
       showBedrockAddingModal,
@@ -174,7 +163,6 @@ const ModelProviders = () => {
       showAzureAddingModal,
       showMineruModal,
       showPaddleOCRModal,
-      showVietOCRModal,
     ],
   );
 
@@ -252,9 +240,6 @@ const ModelProviders = () => {
     if (paddleocrVisible) {
       return onPaddleOCROk;
     }
-    if (vietocrVisible) {
-      return onVietOCROk;
-    }
     if (GoogleAddingVisible) {
       return onGoogleAddingOk;
     }
@@ -284,8 +269,6 @@ const ModelProviders = () => {
     onMineruOk,
     paddleocrVisible,
     onPaddleOCROk,
-    vietocrVisible,
-    onVietOCROk,
   ]);
 
   const { onApiKeyVerifying } = useVerifySettings({
@@ -408,13 +391,6 @@ const ModelProviders = () => {
         loading={paddleocrLoading}
         onVerify={onApiKeyVerifying}
       ></PaddleOCRModal>
-      <VietOCRModal
-        visible={vietocrVisible}
-        hideModal={hideVietOCRModal}
-        onOk={onVietOCROk}
-        loading={vietocrLoading}
-        onVerify={onApiKeyVerifying}
-      ></VietOCRModal>
     </div>
   );
 };

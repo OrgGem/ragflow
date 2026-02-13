@@ -1,0 +1,112 @@
+# --------------------------------------------------------------------------
+# Dockerfile.api – API-only build (no frontend / nginx)
+#
+# This Dockerfile reuses the standard base image but skips the frontend
+# build step entirely, producing a smaller image that only runs the
+# RAGFlow API server + task executors.
+#
+# Build:
+#   docker build -f Dockerfile.api -t ragflow-api .
+#
+# Run (API-only, no webserver/nginx):
+#   docker run -d ragflow-api --disable-webserver
+# --------------------------------------------------------------------------
+
+# base stage – reuse the same base as the full Dockerfile
+FROM ubuntu:24.04 AS base
+USER root
+SHELL ["/bin/bash", "-c"]
+
+ARG NEED_MIRROR=0
+
+WORKDIR /ragflow
+
+# Copy models downloaded via download_deps.py
+RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+    tar --exclude='.*' -cf - \
+        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
+        /huggingface.co/InfiniFlow/deepdoc \
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
+
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    cp -r /deps/nltk_data /root/ && \
+    cp /deps/tika-server-standard-3.2.3.jar /deps/tika-server-standard-3.2.3.jar.md5 /ragflow/ && \
+    cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+
+ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.2.3.jar"
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Setup apt (same as main Dockerfile)
+RUN if [ "$NEED_MIRROR" == "1" ]; then \
+        sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/ubuntu.sources; \
+    fi; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        libglib2.0-0 \
+        libglx-mesa0 \
+        libgl1 \
+        python3-pip \
+        python3-venv \
+        && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/uv,target=/uv \
+    install -m 755 /uv /usr/local/bin/uv
+
+# --------------------------------------------------------------------------
+# builder stage – Python deps only (NO frontend build)
+# --------------------------------------------------------------------------
+FROM base AS builder
+USER root
+WORKDIR /ragflow
+
+COPY pyproject.toml uv.lock ./
+
+RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        sed -i 's|pypi.org|pypi.tuna.tsinghua.edu.cn|g' uv.lock; \
+    else \
+        sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
+    fi; \
+    uv sync --python 3.12 --frozen && \
+    .venv/bin/python3 -m ensurepip --upgrade
+
+COPY .git /ragflow/.git
+
+RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
+    echo "RAGFlow API version: $version_info"; \
+    echo $version_info > /ragflow/VERSION
+
+# --------------------------------------------------------------------------
+# production stage – API only
+# --------------------------------------------------------------------------
+FROM base AS production
+USER root
+WORKDIR /ragflow
+
+# Copy Python environment
+ENV VIRTUAL_ENV=/ragflow/.venv
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+ENV PYTHONPATH=/ragflow/
+
+# Copy only backend code (no web/ frontend)
+COPY api api
+COPY conf conf
+COPY deepdoc deepdoc
+COPY rag rag
+COPY agent agent
+COPY pyproject.toml uv.lock ./
+COPY mcp mcp
+COPY common common
+COPY memory memory
+
+COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
+COPY docker/entrypoint.sh ./
+RUN chmod +x ./entrypoint*.sh
+
+COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+
+# API-only: no nginx, no web frontend
+ENTRYPOINT ["./entrypoint.sh", "--disable-webserver"]

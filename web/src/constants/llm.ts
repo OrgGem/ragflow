@@ -62,7 +62,6 @@ export enum LLMFactory {
   Builtin = 'Builtin',
   MinerU = 'MinerU',
   PaddleOCR = 'PaddleOCR',
-  VietOCR = 'VietOCR',
   N1n = 'n1n',
 }
 
@@ -131,7 +130,6 @@ export const IconMap = {
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.MinerU]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
-  [LLMFactory.VietOCR]: 'vietocr',
   [LLMFactory.N1n]: 'n1n',
 };
 
@@ -184,6 +182,5 @@ export const APIMapUrl = {
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
   [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
-  [LLMFactory.VietOCR]: 'https://github.com/pbcquoc/vietocr',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
 };
