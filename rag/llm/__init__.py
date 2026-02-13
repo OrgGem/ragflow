@@ -126,22 +126,12 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.HunYuan: "openai/",
 }
 
-ChatModel = globals().get("ChatModel", {})
 CvModel = globals().get("CvModel", {})
-EmbeddingModel = globals().get("EmbeddingModel", {})
-RerankModel = globals().get("RerankModel", {})
-Seq2txtModel = globals().get("Seq2txtModel", {})
-TTSModel = globals().get("TTSModel", {})
 OcrModel = globals().get("OcrModel", {})
 
 
 MODULE_MAPPING = {
-    "chat_model": ChatModel,
     "cv_model": CvModel,
-    "embedding_model": EmbeddingModel,
-    "rerank_model": RerankModel,
-    "sequence2txt_model": Seq2txtModel,
-    "tts_model": TTSModel,
     "ocr_model": OcrModel,
 }
 
@@ -178,11 +168,6 @@ for module_name, mapping_dict in MODULE_MAPPING.items():
 
 
 __all__ = [
-    "ChatModel",
     "CvModel",
-    "EmbeddingModel",
-    "RerankModel",
-    "Seq2txtModel",
-    "TTSModel",
     "OcrModel",
 ]
