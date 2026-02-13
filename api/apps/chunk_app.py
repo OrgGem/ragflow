@@ -39,7 +39,6 @@ from common.misc_utils import thread_pool_exec
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts.generator import cross_languages, keyword_extraction
 from common.string_utils import remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
@@ -402,18 +401,12 @@ async def retrieval_test():
             return get_data_error_result(message="Knowledgebase not found!")
 
         _question = question
-        if langs:
-            _question = await cross_languages(kb.tenant_id, None, _question, langs)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
         rerank_mdl = None
         if req.get("rerank_id"):
             rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
-
-        if req.get("keyword", False):
-            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
         ranks = await settings.retriever.retrieval(

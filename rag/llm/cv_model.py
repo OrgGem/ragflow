@@ -462,7 +462,8 @@ class Zhipu4V(GptV4):
         return cleaned, total_token_count_from_response(response)
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
-        from rag.llm.chat_model import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN
+        LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
+        LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
         from rag.nlp import is_chinese
 
         if system and history and history[0].get("role") != "system":
