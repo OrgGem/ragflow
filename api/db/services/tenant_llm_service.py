@@ -405,7 +405,7 @@ class TenantLLMService(CommonService):
                 )
                 return candidate
             except IntegrityError:
-                logging.warning("VietOCR env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
+                logging.warning("VietOCR model name %s conflicts for tenant %s (IntegrityError), generating alternate name", candidate, tenant_id)
                 used_names.add(candidate)
                 idx += 1
                 continue

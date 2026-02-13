@@ -225,7 +225,7 @@ def by_vietocr(
                 elif env_name:
                     vietocr_llm_name = env_name
             except Exception as e:  # best-effort fallback
-                logging.warning(f"fallback to env vietocr: {e}")
+                logging.warning(f"Failed to query VietOCR tenant LLM, falling back to env config: {e}")
 
         if vietocr_llm_name:
             try:
