@@ -43,6 +43,7 @@ RUN if [ "$NEED_MIRROR" == "1" ]; then \
     fi; \
     apt-get update && apt-get install -y --no-install-recommends \
         curl \
+        git \
         libglib2.0-0 \
         libglx-mesa0 \
         libgl1 \
