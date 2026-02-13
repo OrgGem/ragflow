@@ -73,8 +73,13 @@ ENGINE_ENV_ENSURE = {
 
 
 def _resolve_ocr_model_name(tenant_id: str, engine: str) -> str | None:
-    """Resolve the LLM model name for the given OCR engine and tenant."""
-    factory = ENGINE_FACTORY_MAP[engine]
+    """Resolve the LLM model name for the given OCR engine and tenant.
+
+    ``engine`` must be a key in ENGINE_FACTORY_MAP (validated by the caller).
+    """
+    factory = ENGINE_FACTORY_MAP.get(engine)
+    if not factory:
+        return None
 
     # Try to auto-provision from env variables first
     ensure_method = ENGINE_ENV_ENSURE.get(engine)
@@ -100,6 +105,8 @@ def _resolve_ocr_model_name(tenant_id: str, engine: str) -> str | None:
     return None
 
 
+# `manager` is a Blueprint injected by the auto-discovery system in
+# ``api/apps/__init__.py:register_page``.
 @manager.route("/ocr", methods=["POST"])  # noqa: F821
 @token_required
 async def ocr(tenant_id):
@@ -227,7 +234,7 @@ async def ocr(tenant_id):
         )
 
         sections, tables = ocr_model.mdl.parse_pdf(
-            filepath=filename,
+            filepath=filename,  # used as a display name; actual data is in `binary`
             binary=binary,
             callback=None,
             parse_method=parse_method,
