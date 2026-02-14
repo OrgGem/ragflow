@@ -251,7 +251,7 @@ class TestOCROnlyModeRegistration(unittest.TestCase):
         self.assertIn('page_path.glob("*sdk/ocr.py")', content)
         self.assertIn("return None", content)
 
-    def test_settings_gates_elasticsearch_in_ocr_only_mode(self):
+    def test_settings_ocr_only_mode_configuration(self):
         settings_path = os.path.join(
             os.path.dirname(__file__), "..", "..", "..", "common", "settings.py"
         )
