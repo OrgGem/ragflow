@@ -19,14 +19,25 @@ import sys
 import time
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+
+OCR_ONLY_MODE = os.getenv("RAGFLOW_OCR_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+
 from quart import Blueprint, Quart, request, g, current_app, session, jsonify
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
 from common.constants import StatusEnum, RetCode
-from api.db.db_models import close_connection, APIToken
-from api.db.services import UserService
+if OCR_ONLY_MODE:
+    close_connection = lambda: None
+    APIToken = None
+    UserService = None
+else:
+    from api.db.db_models import close_connection, APIToken
+    from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
-from api.utils import commands
+if OCR_ONLY_MODE:
+    commands = None
+else:
+    from api.utils import commands
 
 from quart_auth import Unauthorized as QuartAuthUnauthorized
 from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
@@ -81,7 +92,8 @@ app.config["MAX_CONTENT_LENGTH"] = int(
 )
 app.config['SECRET_KEY'] = settings.SECRET_KEY
 app.secret_key = settings.SECRET_KEY
-commands.register_commands(app)
+if commands is not None:
+    commands.register_commands(app)
 
 from functools import wraps
 from typing import ParamSpec, TypeVar
@@ -93,6 +105,9 @@ P = ParamSpec("P")
 
 
 def _load_user():
+    if OCR_ONLY_MODE:
+        return {"id": "ocr-only"}
+
     jwt = Serializer(secret_key=settings.SECRET_KEY)
     authorization = request.headers.get("Authorization")
     g.user = None
@@ -124,7 +139,7 @@ def _load_user():
         logging.warning(f"load_user got exception {e_auth}")
         try:
             authorization = request.headers.get("Authorization")
-            if len(authorization.split()) == 2:
+            if APIToken is not None and len(authorization.split()) == 2:
                 objs = APIToken.query(token=authorization.split()[1])
                 if objs:
                     user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
@@ -258,8 +273,6 @@ _EXCLUDED_SDK = {
 _EXCLUDED_RESTFUL = {
     "memory_api.py",
 }
-
-OCR_ONLY_MODE = os.getenv("RAGFLOW_OCR_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def search_pages_path(page_path):
