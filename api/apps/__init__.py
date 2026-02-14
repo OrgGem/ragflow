@@ -259,8 +259,13 @@ _EXCLUDED_RESTFUL = {
     "memory_api.py",
 }
 
+OCR_ONLY_MODE = os.getenv("RAGFLOW_OCR_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+
 
 def search_pages_path(page_path):
+    if OCR_ONLY_MODE:
+        return [path for path in page_path.glob("*sdk/ocr.py") if not path.name.startswith(".")]
+
     app_path_list = [
         path for path in page_path.glob("*_app.py")
         if not path.name.startswith(".") and path.name not in _EXCLUDED_APPS

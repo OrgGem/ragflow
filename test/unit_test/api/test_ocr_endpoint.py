@@ -237,5 +237,19 @@ class TestOCREndpointFileExists(unittest.TestCase):
         self.assertIn("POST /api/v1/ocr", content)
 
 
+class TestOCROnlyModeRegistration(unittest.TestCase):
+    """Ensure OCR-only mode wiring exists in app registration."""
+
+    def test_app_init_has_ocr_only_flag_and_filter(self):
+        app_init_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "api", "apps", "__init__.py"
+        )
+        with open(app_init_path) as f:
+            content = f.read()
+
+        self.assertIn("RAGFLOW_OCR_ONLY", content)
+        self.assertIn('page_path.glob("*sdk/ocr.py")', content)
+
+
 if __name__ == "__main__":
     unittest.main()
