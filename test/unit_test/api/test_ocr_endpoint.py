@@ -240,7 +240,7 @@ class TestOCREndpointFileExists(unittest.TestCase):
 class TestOCROnlyModeRegistration(unittest.TestCase):
     """Ensure OCR-only mode wiring exists in app registration."""
 
-    def test_app_init_has_ocr_only_flag_and_filter(self):
+    def test_ocr_only_mode_configuration_exists(self):
         app_init_path = os.path.join(
             os.path.dirname(__file__), "..", "..", "..", "api", "apps", "__init__.py"
         )

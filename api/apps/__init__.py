@@ -27,7 +27,9 @@ from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
 from common.constants import StatusEnum, RetCode
 if OCR_ONLY_MODE:
-    close_connection = lambda: None
+    def close_connection():
+        return None
+
     APIToken = None
     UserService = None
 else:
@@ -106,7 +108,7 @@ P = ParamSpec("P")
 
 def _load_user():
     if OCR_ONLY_MODE:
-        return {"id": "ocr-only"}
+        return None
 
     jwt = Serializer(secret_key=settings.SECRET_KEY)
     authorization = request.headers.get("Authorization")
@@ -139,7 +141,7 @@ def _load_user():
         logging.warning(f"load_user got exception {e_auth}")
         try:
             authorization = request.headers.get("Authorization")
-            if APIToken is not None and len(authorization.split()) == 2:
+            if APIToken is not None and authorization and len(authorization.split()) == 2:
                 objs = APIToken.query(token=authorization.split()[1])
                 if objs:
                     user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
