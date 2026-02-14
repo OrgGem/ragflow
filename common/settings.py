@@ -298,6 +298,7 @@ def init_settings():
 
     global STORAGE_IMPL
     if OCR_ONLY_MODE:
+        # OCR-only service does not persist files to any backing object storage.
         STORAGE_IMPL = None
     else:
         global AZURE, S3, MINIO, OSS, GCS

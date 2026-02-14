@@ -75,11 +75,14 @@ ENGINE_ENV_ENSURE = {
     "mineru": "ensure_mineru_from_env",
 }
 
+EMPTY_OCR_CONFIG = "{}"
+
 
 def _resolve_ocr_model_name(tenant_id: str, engine: str) -> str | None:
     """Resolve the LLM model name for the given OCR engine and tenant.
 
     ``engine`` must be a key in ENGINE_FACTORY_MAP (validated by the caller).
+    In OCR-only mode, a synthetic env-backed model name is returned.
     """
     if OCR_ONLY_MODE:
         return f"{engine}-from-env"
@@ -113,12 +116,14 @@ def _resolve_ocr_model_name(tenant_id: str, engine: str) -> str | None:
 
 
 def _build_ocr_model_for_ocr_only(engine: str):
+    if engine not in ENGINE_FACTORY_MAP:
+        raise ValueError(f"Unsupported OCR engine: {engine}")
     model_name = f"{engine}-from-env"
     if engine == "vietocr":
-        return VietOCROcrModel("{}", model_name)
+        return VietOCROcrModel(EMPTY_OCR_CONFIG, model_name)
     if engine == "paddleocr":
-        return PaddleOCROcrModel("{}", model_name)
-    return MinerUOcrModel("{}", model_name)
+        return PaddleOCROcrModel(EMPTY_OCR_CONFIG, model_name)
+    return MinerUOcrModel(EMPTY_OCR_CONFIG, model_name)
 
 
 def _identity_auth_decorator(func):
