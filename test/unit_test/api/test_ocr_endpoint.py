@@ -249,6 +249,18 @@ class TestOCROnlyModeRegistration(unittest.TestCase):
 
         self.assertIn("RAGFLOW_OCR_ONLY", content)
         self.assertIn('page_path.glob("*sdk/ocr.py")', content)
+        self.assertIn("return None", content)
+
+    def test_settings_gates_elasticsearch_in_ocr_only_mode(self):
+        settings_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "common", "settings.py"
+        )
+        with open(settings_path) as f:
+            content = f.read()
+
+        self.assertIn("if not OCR_ONLY_MODE:", content)
+        self.assertIn("import rag.utils.es_conn", content)
+        self.assertIn('DOC_ENGINE = "none"', content)
 
 
 if __name__ == "__main__":
