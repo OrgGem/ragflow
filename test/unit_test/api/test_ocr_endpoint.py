@@ -225,7 +225,7 @@ class TestOCREndpointFileExists(unittest.TestCase):
         with open(ocr_path) as f:
             content = f.read()
         self.assertIn('@manager.route("/ocr"', content)
-        self.assertIn("@token_required", content)
+        self.assertIn("@auth_required", content)
         self.assertIn("async def ocr(", content)
 
     def test_ocr_py_has_docstring(self):
@@ -261,6 +261,19 @@ class TestOCROnlyModeRegistration(unittest.TestCase):
         self.assertIn("if not OCR_ONLY_MODE:", content)
         self.assertIn("import rag.utils.es_conn", content)
         self.assertIn('DOC_ENGINE = "none"', content)
+        self.assertIn("STORAGE_IMPL = None", content)
+
+    def test_ocr_endpoint_has_dbless_auth_and_model_path(self):
+        ocr_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "api", "apps", "sdk", "ocr.py"
+        )
+        with open(ocr_path) as f:
+            content = f.read()
+
+        self.assertIn("auth_required = token_required if not OCR_ONLY_MODE", content)
+        self.assertIn("async def ocr(tenant_id=None):", content)
+        self.assertIn("if OCR_ONLY_MODE:", content)
+        self.assertIn("_build_ocr_model_for_ocr_only", content)
 
 
 if __name__ == "__main__":

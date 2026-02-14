@@ -296,40 +296,43 @@ def init_settings():
     elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
         msgStoreConn = memory_ob_conn.OBConnection()
 
-    global AZURE, S3, MINIO, OSS, GCS
-    if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
-        AZURE = get_base_config("azure", {})
-    elif STORAGE_IMPL_TYPE == 'AWS_S3':
-        S3 = get_base_config("s3", {})
-    elif STORAGE_IMPL_TYPE == 'MINIO':
-        MINIO = decrypt_database_config(name="minio")
-    elif STORAGE_IMPL_TYPE == 'OSS':
-        OSS = get_base_config("oss", {})
-    elif STORAGE_IMPL_TYPE == 'GCS':
-        GCS = get_base_config("gcs", {})
-
     global STORAGE_IMPL
-    storage_impl = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
-    
-    # Define crypto settings
-    crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
-    
-    # Check if encryption is enabled
-    if crypto_enabled:
-        try:
-            from rag.utils.encrypted_storage import create_encrypted_storage
-            algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
-            crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
-            
-            STORAGE_IMPL = create_encrypted_storage(storage_impl, 
-                algorithm=algorithm, 
-                key=crypto_key, 
-                encryption_enabled=crypto_enabled)
-        except Exception as e:
-            logging.error(f"Failed to initialize encrypted storage: {e}")
-            STORAGE_IMPL = storage_impl
+    if OCR_ONLY_MODE:
+        STORAGE_IMPL = None
     else:
-        STORAGE_IMPL = storage_impl
+        global AZURE, S3, MINIO, OSS, GCS
+        if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
+            AZURE = get_base_config("azure", {})
+        elif STORAGE_IMPL_TYPE == 'AWS_S3':
+            S3 = get_base_config("s3", {})
+        elif STORAGE_IMPL_TYPE == 'MINIO':
+            MINIO = decrypt_database_config(name="minio")
+        elif STORAGE_IMPL_TYPE == 'OSS':
+            OSS = get_base_config("oss", {})
+        elif STORAGE_IMPL_TYPE == 'GCS':
+            GCS = get_base_config("gcs", {})
+
+        storage_impl = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
+
+        # Define crypto settings
+        crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
+
+        # Check if encryption is enabled
+        if crypto_enabled:
+            try:
+                from rag.utils.encrypted_storage import create_encrypted_storage
+                algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
+                crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
+
+                STORAGE_IMPL = create_encrypted_storage(storage_impl,
+                    algorithm=algorithm,
+                    key=crypto_key,
+                    encryption_enabled=crypto_enabled)
+            except Exception as e:
+                logging.error(f"Failed to initialize encrypted storage: {e}")
+                STORAGE_IMPL = storage_impl
+        else:
+            STORAGE_IMPL = storage_impl
 
     global retriever
     retriever = None if OCR_ONLY_MODE else search.Dealer(docStoreConn)

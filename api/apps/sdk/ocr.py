@@ -41,15 +41,19 @@ Response:
 """
 import logging
 import os
-import tempfile
 
 from quart import request
 
-from api.db.services.llm_service import LLMBundle
-from api.db.services.tenant_llm_service import TenantLLMService
+OCR_ONLY_MODE = os.getenv("RAGFLOW_OCR_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+if OCR_ONLY_MODE:
+    from rag.llm.ocr_model import MinerUOcrModel, PaddleOCROcrModel, VietOCROcrModel
+    LLMBundle = None
+    TenantLLMService = None
+else:
+    from api.db.services.llm_service import LLMBundle
+    from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import (
     get_result,
-    get_error_data_result,
     server_error_response,
     token_required,
 )
@@ -77,6 +81,9 @@ def _resolve_ocr_model_name(tenant_id: str, engine: str) -> str | None:
 
     ``engine`` must be a key in ENGINE_FACTORY_MAP (validated by the caller).
     """
+    if OCR_ONLY_MODE:
+        return f"{engine}-from-env"
+
     factory = ENGINE_FACTORY_MAP.get(engine)
     if not factory:
         return None
@@ -105,11 +112,27 @@ def _resolve_ocr_model_name(tenant_id: str, engine: str) -> str | None:
     return None
 
 
+def _build_ocr_model_for_ocr_only(engine: str):
+    model_name = f"{engine}-from-env"
+    if engine == "vietocr":
+        return VietOCROcrModel("{}", model_name)
+    if engine == "paddleocr":
+        return PaddleOCROcrModel("{}", model_name)
+    return MinerUOcrModel("{}", model_name)
+
+
+def _identity_auth_decorator(func):
+    return func
+
+
+auth_required = token_required if not OCR_ONLY_MODE else _identity_auth_decorator
+
+
 # `manager` is a Blueprint injected by the auto-discovery system in
 # ``api/apps/__init__.py:register_page``.
 @manager.route("/ocr", methods=["POST"])  # noqa: F821
-@token_required
-async def ocr(tenant_id):
+@auth_required
+async def ocr(tenant_id=None):
     """
     Perform OCR on an uploaded file and return extracted text.
     ---
@@ -211,29 +234,31 @@ async def ocr(tenant_id):
         lang = form.get("lang", "Vietnamese").strip()
 
         # --- resolve OCR model ---
-        llm_name = _resolve_ocr_model_name(tenant_id, ocr_engine)
-        if not llm_name:
-            return get_result(
-                code=RetCode.DATA_ERROR,
-                message=(
-                    f"No '{ocr_engine}' OCR model configured for this tenant. "
-                    f"Please add a {ENGINE_FACTORY_MAP[ocr_engine]} model in Settings → Model Providers, "
-                    f"or set the corresponding environment variables."
-                ),
-            )
-
         # --- read file into memory ---
         binary = await file_obj.read()
 
         # --- run OCR ---
-        ocr_model = LLMBundle(
-            tenant_id=tenant_id,
-            llm_type=LLMType.OCR,
-            llm_name=llm_name,
-            lang=lang,
-        )
+        if OCR_ONLY_MODE:
+            parser = _build_ocr_model_for_ocr_only(ocr_engine)
+        else:
+            llm_name = _resolve_ocr_model_name(tenant_id, ocr_engine)
+            if not llm_name:
+                return get_result(
+                    code=RetCode.DATA_ERROR,
+                    message=(
+                        f"No '{ocr_engine}' OCR model configured for this tenant. "
+                        f"Please add a {ENGINE_FACTORY_MAP[ocr_engine]} model in Settings → Model Providers, "
+                        f"or set the corresponding environment variables."
+                    ),
+                )
+            parser = LLMBundle(
+                tenant_id=tenant_id,
+                llm_type=LLMType.OCR,
+                llm_name=llm_name,
+                lang=lang,
+            ).mdl
 
-        sections, tables = ocr_model.mdl.parse_pdf(
+        sections, tables = parser.parse_pdf(
             filepath=filename,  # used as a display name; actual data is in `binary`
             binary=binary,
             callback=None,
