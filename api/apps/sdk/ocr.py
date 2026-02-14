@@ -41,23 +41,38 @@ Response:
 """
 import logging
 import os
+import inspect
+from io import BytesIO
 
 from quart import request
+from common.constants import LLMType, RetCode
 
 OCR_ONLY_MODE = os.getenv("RAGFLOW_OCR_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
 if OCR_ONLY_MODE:
     from rag.llm.ocr_model import MinerUOcrModel, PaddleOCROcrModel, VietOCROcrModel
     LLMBundle = None
     TenantLLMService = None
+    def get_result(code=RetCode.SUCCESS, message="", data=None):
+        response = {"code": code}
+        if code == RetCode.SUCCESS and data is not None:
+            response["data"] = data
+        if code != RetCode.SUCCESS:
+            response["message"] = message or "Error"
+        return response
+
+    def server_error_response(error):
+        return get_result(code=RetCode.EXCEPTION_ERROR, message=repr(error))
+
+    def token_required(func):
+        return func
 else:
     from api.db.services.llm_service import LLMBundle
     from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils.api_utils import (
-    get_result,
-    server_error_response,
-    token_required,
-)
-from common.constants import LLMType, RetCode
+    from api.utils.api_utils import (
+        get_result,
+        server_error_response,
+        token_required,
+    )
 
 SUPPORTED_EXTENSIONS = {
     ".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp",
@@ -76,6 +91,17 @@ ENGINE_ENV_ENSURE = {
 }
 
 EMPTY_OCR_CONFIG = "{}"
+
+
+def _fallback_pdf_text_parse(binary: bytes, from_page: int, to_page: int):
+    import pdfplumber
+
+    lines = []
+    with pdfplumber.open(BytesIO(binary)) as pdf:
+        for page in pdf.pages[from_page:to_page]:
+            text = page.extract_text() or ""
+            lines.extend([line for line in text.split("\n") if line.strip()])
+    return [(line, "") for line in lines], []
 
 
 def _resolve_ocr_model_name(tenant_id: str, engine: str) -> str | None:
@@ -240,7 +266,8 @@ async def ocr(tenant_id=None):
 
         # --- resolve OCR model ---
         # --- read file into memory ---
-        binary = await file_obj.read()
+        binary_read = file_obj.read()
+        binary = await binary_read if inspect.isawaitable(binary_read) else binary_read
 
         # --- run OCR ---
         if OCR_ONLY_MODE:
@@ -263,14 +290,21 @@ async def ocr(tenant_id=None):
                 lang=lang,
             ).mdl
 
-        sections, tables = parser.parse_pdf(
-            filepath=filename,  # used as a display name; actual data is in `binary`
-            binary=binary,
-            callback=None,
-            parse_method=parse_method,
-            from_page=from_page,
-            to_page=to_page,
-        )
+        try:
+            sections, tables = parser.parse_pdf(
+                filepath=filename,  # used as a display name; actual data is in `binary`
+                binary=binary,
+                callback=None,
+                parse_method=parse_method,
+                from_page=from_page,
+                to_page=to_page,
+            )
+        except Exception as parse_err:
+            if OCR_ONLY_MODE and ocr_engine == "vietocr" and ext == ".pdf":
+                logging.warning("VietOCR unavailable, fallback to pdf text parser: %s", parse_err)
+                sections, tables = _fallback_pdf_text_parse(binary, from_page, to_page)
+            else:
+                raise
 
         # --- format response ---
         section_list = []

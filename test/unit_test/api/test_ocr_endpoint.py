@@ -274,6 +274,7 @@ class TestOCROnlyModeRegistration(unittest.TestCase):
         self.assertIn("async def ocr(tenant_id=None):", content)
         self.assertIn("if OCR_ONLY_MODE:", content)
         self.assertIn("_build_ocr_model_for_ocr_only", content)
+        self.assertIn("_fallback_pdf_text_parse", content)
 
 
 if __name__ == "__main__":

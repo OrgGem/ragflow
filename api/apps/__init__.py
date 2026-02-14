@@ -45,7 +45,19 @@ from quart_auth import Unauthorized as QuartAuthUnauthorized
 from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
 from quart_schema import QuartSchema
 from common import settings
-from api.utils.api_utils import server_error_response, get_json_result
+if OCR_ONLY_MODE:
+    def get_json_result(code=RetCode.SUCCESS, message="", data=None):
+        payload = {"code": code}
+        if data is not None:
+            payload["data"] = data
+        if message:
+            payload["message"] = message
+        return jsonify(payload)
+
+    def server_error_response(error):
+        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(error))
+else:
+    from api.utils.api_utils import server_error_response, get_json_result
 from api.constants import API_VERSION
 from common.misc_utils import get_uuid
 

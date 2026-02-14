@@ -43,8 +43,12 @@ from rag.nlp import search
 
 if not OCR_ONLY_MODE:
     import memory.utils.es_conn as memory_es_conn
-import memory.utils.infinity_conn as memory_infinity_conn
-import memory.utils.ob_conn as memory_ob_conn
+    import memory.utils.infinity_conn as memory_infinity_conn
+    import memory.utils.ob_conn as memory_ob_conn
+else:
+    memory_es_conn = None
+    memory_infinity_conn = None
+    memory_ob_conn = None
 
 LLM = None
 LLM_FACTORY = None
