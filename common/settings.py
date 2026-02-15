@@ -25,7 +25,9 @@ from common.misc_utils import pip_install_torch
 from common.constants import SVR_QUEUE_NAME, Storage
 
 import rag.utils
-import rag.utils.es_conn
+OCR_ONLY_MODE = os.getenv("RAGFLOW_OCR_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+if not OCR_ONLY_MODE:
+    import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.ob_conn
 import rag.utils.opensearch_conn
@@ -39,9 +41,14 @@ from rag.utils.oss_conn import RAGFlowOSS
 
 from rag.nlp import search
 
-import memory.utils.es_conn as memory_es_conn
-import memory.utils.infinity_conn as memory_infinity_conn
-import memory.utils.ob_conn as memory_ob_conn
+if not OCR_ONLY_MODE:
+    import memory.utils.es_conn as memory_es_conn
+    import memory.utils.infinity_conn as memory_infinity_conn
+    import memory.utils.ob_conn as memory_ob_conn
+else:
+    memory_es_conn = None
+    memory_infinity_conn = None
+    memory_ob_conn = None
 
 LLM = None
 LLM_FACTORY = None
@@ -244,35 +251,43 @@ def init_settings():
     OAUTH_CONFIG = get_base_config("oauth", {})
 
     global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
-    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
-    DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
-    DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
-    lower_case_doc_engine = DOC_ENGINE.lower()
-    if lower_case_doc_engine == "elasticsearch":
-        ES = get_base_config("es", {})
-        docStoreConn = rag.utils.es_conn.ESConnection()
-    elif lower_case_doc_engine == "infinity":
-        INFINITY = get_base_config("infinity", {
-            "uri": "infinity:23817",
-            "postgres_port": 5432,
-            "db_name": "default_db"
-        })
-        docStoreConn = rag.utils.infinity_conn.InfinityConnection()
-    elif lower_case_doc_engine == "opensearch":
-        OS = get_base_config("os", {})
-        docStoreConn = rag.utils.opensearch_conn.OSConnection()
-    elif lower_case_doc_engine == "oceanbase":
-        OB = get_base_config("oceanbase", {})
-        docStoreConn = rag.utils.ob_conn.OBConnection()
-    elif lower_case_doc_engine == "seekdb":
-        OB = get_base_config("seekdb", {})
-        docStoreConn = rag.utils.ob_conn.OBConnection()
+    if OCR_ONLY_MODE:
+        DOC_ENGINE = "none"
+        DOC_ENGINE_INFINITY = False
+        DOC_ENGINE_OCEANBASE = False
+        docStoreConn = None
     else:
-        raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
+        DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
+        DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
+        DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
+        lower_case_doc_engine = DOC_ENGINE.lower()
+        if lower_case_doc_engine == "elasticsearch":
+            ES = get_base_config("es", {})
+            docStoreConn = rag.utils.es_conn.ESConnection()
+        elif lower_case_doc_engine == "infinity":
+            INFINITY = get_base_config("infinity", {
+                "uri": "infinity:23817",
+                "postgres_port": 5432,
+                "db_name": "default_db"
+            })
+            docStoreConn = rag.utils.infinity_conn.InfinityConnection()
+        elif lower_case_doc_engine == "opensearch":
+            OS = get_base_config("os", {})
+            docStoreConn = rag.utils.opensearch_conn.OSConnection()
+        elif lower_case_doc_engine == "oceanbase":
+            OB = get_base_config("oceanbase", {})
+            docStoreConn = rag.utils.ob_conn.OBConnection()
+        elif lower_case_doc_engine == "seekdb":
+            OB = get_base_config("seekdb", {})
+            docStoreConn = rag.utils.ob_conn.OBConnection()
+        else:
+            raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
     global msgStoreConn
     # use the same engine for message store
-    if DOC_ENGINE == "elasticsearch":
+    if OCR_ONLY_MODE:
+        msgStoreConn = None
+    elif DOC_ENGINE == "elasticsearch":
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
     elif DOC_ENGINE == "infinity":
@@ -285,43 +300,47 @@ def init_settings():
     elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
         msgStoreConn = memory_ob_conn.OBConnection()
 
-    global AZURE, S3, MINIO, OSS, GCS
-    if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
-        AZURE = get_base_config("azure", {})
-    elif STORAGE_IMPL_TYPE == 'AWS_S3':
-        S3 = get_base_config("s3", {})
-    elif STORAGE_IMPL_TYPE == 'MINIO':
-        MINIO = decrypt_database_config(name="minio")
-    elif STORAGE_IMPL_TYPE == 'OSS':
-        OSS = get_base_config("oss", {})
-    elif STORAGE_IMPL_TYPE == 'GCS':
-        GCS = get_base_config("gcs", {})
-
     global STORAGE_IMPL
-    storage_impl = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
-    
-    # Define crypto settings
-    crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
-    
-    # Check if encryption is enabled
-    if crypto_enabled:
-        try:
-            from rag.utils.encrypted_storage import create_encrypted_storage
-            algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
-            crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
-            
-            STORAGE_IMPL = create_encrypted_storage(storage_impl, 
-                algorithm=algorithm, 
-                key=crypto_key, 
-                encryption_enabled=crypto_enabled)
-        except Exception as e:
-            logging.error(f"Failed to initialize encrypted storage: {e}")
-            STORAGE_IMPL = storage_impl
+    if OCR_ONLY_MODE:
+        # OCR-only service does not persist files to any backing object storage.
+        STORAGE_IMPL = None
     else:
-        STORAGE_IMPL = storage_impl
+        global AZURE, S3, MINIO, OSS, GCS
+        if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
+            AZURE = get_base_config("azure", {})
+        elif STORAGE_IMPL_TYPE == 'AWS_S3':
+            S3 = get_base_config("s3", {})
+        elif STORAGE_IMPL_TYPE == 'MINIO':
+            MINIO = decrypt_database_config(name="minio")
+        elif STORAGE_IMPL_TYPE == 'OSS':
+            OSS = get_base_config("oss", {})
+        elif STORAGE_IMPL_TYPE == 'GCS':
+            GCS = get_base_config("gcs", {})
+
+        storage_impl = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
+
+        # Define crypto settings
+        crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
+
+        # Check if encryption is enabled
+        if crypto_enabled:
+            try:
+                from rag.utils.encrypted_storage import create_encrypted_storage
+                algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
+                crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
+
+                STORAGE_IMPL = create_encrypted_storage(storage_impl,
+                    algorithm=algorithm,
+                    key=crypto_key,
+                    encryption_enabled=crypto_enabled)
+            except Exception as e:
+                logging.error(f"Failed to initialize encrypted storage: {e}")
+                STORAGE_IMPL = storage_impl
+        else:
+            STORAGE_IMPL = storage_impl
 
     global retriever
-    retriever = search.Dealer(docStoreConn)
+    retriever = None if OCR_ONLY_MODE else search.Dealer(docStoreConn)
 
     global SANDBOX_HOST
     if int(os.environ.get("SANDBOX_ENABLED", "0")):
@@ -393,4 +412,3 @@ def _resolve_per_model_config(entry_dict, backup_factory, backup_api_key, backup
 def print_rag_settings():
     logging.info(f"MAX_CONTENT_LENGTH: {DOC_MAXIMUM_SIZE}")
     logging.info(f"MAX_FILE_COUNT_PER_USER: {int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))}")
-

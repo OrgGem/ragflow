@@ -225,7 +225,7 @@ class TestOCREndpointFileExists(unittest.TestCase):
         with open(ocr_path) as f:
             content = f.read()
         self.assertIn('@manager.route("/ocr"', content)
-        self.assertIn("@token_required", content)
+        self.assertIn("@auth_required", content)
         self.assertIn("async def ocr(", content)
 
     def test_ocr_py_has_docstring(self):
@@ -235,6 +235,46 @@ class TestOCREndpointFileExists(unittest.TestCase):
         with open(ocr_path) as f:
             content = f.read()
         self.assertIn("POST /api/v1/ocr", content)
+
+
+class TestOCROnlyModeRegistration(unittest.TestCase):
+    """Ensure OCR-only mode wiring exists in app registration."""
+
+    def test_ocr_only_mode_configuration_exists(self):
+        app_init_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "api", "apps", "__init__.py"
+        )
+        with open(app_init_path) as f:
+            content = f.read()
+
+        self.assertIn("RAGFLOW_OCR_ONLY", content)
+        self.assertIn('page_path.glob("*sdk/ocr.py")', content)
+        self.assertIn("return None", content)
+
+    def test_settings_ocr_only_mode_configuration(self):
+        settings_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "common", "settings.py"
+        )
+        with open(settings_path) as f:
+            content = f.read()
+
+        self.assertIn("if not OCR_ONLY_MODE:", content)
+        self.assertIn("import rag.utils.es_conn", content)
+        self.assertIn('DOC_ENGINE = "none"', content)
+        self.assertIn("STORAGE_IMPL = None", content)
+
+    def test_ocr_endpoint_has_dbless_auth_and_model_path(self):
+        ocr_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "api", "apps", "sdk", "ocr.py"
+        )
+        with open(ocr_path) as f:
+            content = f.read()
+
+        self.assertIn("auth_required = token_required if not OCR_ONLY_MODE", content)
+        self.assertIn("async def ocr(tenant_id=None):", content)
+        self.assertIn("if OCR_ONLY_MODE:", content)
+        self.assertIn("_build_ocr_model_for_ocr_only", content)
+        self.assertIn("_fallback_pdf_text_parse", content)
 
 
 if __name__ == "__main__":

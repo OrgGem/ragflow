@@ -41,19 +41,38 @@ Response:
 """
 import logging
 import os
-import tempfile
+import inspect
+from io import BytesIO
 
 from quart import request
-
-from api.db.services.llm_service import LLMBundle
-from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils.api_utils import (
-    get_result,
-    get_error_data_result,
-    server_error_response,
-    token_required,
-)
 from common.constants import LLMType, RetCode
+
+OCR_ONLY_MODE = os.getenv("RAGFLOW_OCR_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+if OCR_ONLY_MODE:
+    from rag.llm.ocr_model import MinerUOcrModel, PaddleOCROcrModel, VietOCROcrModel
+    LLMBundle = None
+    TenantLLMService = None
+    def get_result(code=RetCode.SUCCESS, message="", data=None):
+        response = {"code": code}
+        if code == RetCode.SUCCESS and data is not None:
+            response["data"] = data
+        if code != RetCode.SUCCESS:
+            response["message"] = message or "Error"
+        return response
+
+    def server_error_response(error):
+        return get_result(code=RetCode.EXCEPTION_ERROR, message=repr(error))
+
+    def token_required(func):
+        return func
+else:
+    from api.db.services.llm_service import LLMBundle
+    from api.db.services.tenant_llm_service import TenantLLMService
+    from api.utils.api_utils import (
+        get_result,
+        server_error_response,
+        token_required,
+    )
 
 SUPPORTED_EXTENSIONS = {
     ".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp",
@@ -71,12 +90,29 @@ ENGINE_ENV_ENSURE = {
     "mineru": "ensure_mineru_from_env",
 }
 
+EMPTY_OCR_CONFIG = "{}"
+
+
+def _fallback_pdf_text_parse(binary: bytes, from_page: int, to_page: int):
+    import pdfplumber
+
+    lines = []
+    with pdfplumber.open(BytesIO(binary)) as pdf:
+        for page in pdf.pages[from_page:to_page]:
+            text = page.extract_text() or ""
+            lines.extend([line for line in text.split("\n") if line.strip()])
+    return [(line, "") for line in lines], []
+
 
 def _resolve_ocr_model_name(tenant_id: str, engine: str) -> str | None:
     """Resolve the LLM model name for the given OCR engine and tenant.
 
     ``engine`` must be a key in ENGINE_FACTORY_MAP (validated by the caller).
+    In OCR-only mode, a synthetic env-backed model name is returned.
     """
+    if OCR_ONLY_MODE:
+        return f"{engine}-from-env"
+
     factory = ENGINE_FACTORY_MAP.get(engine)
     if not factory:
         return None
@@ -105,11 +141,29 @@ def _resolve_ocr_model_name(tenant_id: str, engine: str) -> str | None:
     return None
 
 
+def _build_ocr_model_for_ocr_only(engine: str):
+    if engine not in ENGINE_FACTORY_MAP:
+        raise ValueError(f"Unsupported OCR engine: {engine}")
+    model_name = f"{engine}-from-env"
+    if engine == "vietocr":
+        return VietOCROcrModel(EMPTY_OCR_CONFIG, model_name)
+    if engine == "paddleocr":
+        return PaddleOCROcrModel(EMPTY_OCR_CONFIG, model_name)
+    return MinerUOcrModel(EMPTY_OCR_CONFIG, model_name)
+
+
+def _identity_auth_decorator(func):
+    return func
+
+
+auth_required = token_required if not OCR_ONLY_MODE else _identity_auth_decorator
+
+
 # `manager` is a Blueprint injected by the auto-discovery system in
 # ``api/apps/__init__.py:register_page``.
 @manager.route("/ocr", methods=["POST"])  # noqa: F821
-@token_required
-async def ocr(tenant_id):
+@auth_required
+async def ocr(tenant_id=None):
     """
     Perform OCR on an uploaded file and return extracted text.
     ---
@@ -211,36 +265,46 @@ async def ocr(tenant_id):
         lang = form.get("lang", "Vietnamese").strip()
 
         # --- resolve OCR model ---
-        llm_name = _resolve_ocr_model_name(tenant_id, ocr_engine)
-        if not llm_name:
-            return get_result(
-                code=RetCode.DATA_ERROR,
-                message=(
-                    f"No '{ocr_engine}' OCR model configured for this tenant. "
-                    f"Please add a {ENGINE_FACTORY_MAP[ocr_engine]} model in Settings → Model Providers, "
-                    f"or set the corresponding environment variables."
-                ),
-            )
-
         # --- read file into memory ---
-        binary = await file_obj.read()
+        binary_read = file_obj.read()
+        binary = await binary_read if inspect.isawaitable(binary_read) else binary_read
 
         # --- run OCR ---
-        ocr_model = LLMBundle(
-            tenant_id=tenant_id,
-            llm_type=LLMType.OCR,
-            llm_name=llm_name,
-            lang=lang,
-        )
+        if OCR_ONLY_MODE:
+            parser = _build_ocr_model_for_ocr_only(ocr_engine)
+        else:
+            llm_name = _resolve_ocr_model_name(tenant_id, ocr_engine)
+            if not llm_name:
+                return get_result(
+                    code=RetCode.DATA_ERROR,
+                    message=(
+                        f"No '{ocr_engine}' OCR model configured for this tenant. "
+                        f"Please add a {ENGINE_FACTORY_MAP[ocr_engine]} model in Settings → Model Providers, "
+                        f"or set the corresponding environment variables."
+                    ),
+                )
+            parser = LLMBundle(
+                tenant_id=tenant_id,
+                llm_type=LLMType.OCR,
+                llm_name=llm_name,
+                lang=lang,
+            ).mdl
 
-        sections, tables = ocr_model.mdl.parse_pdf(
-            filepath=filename,  # used as a display name; actual data is in `binary`
-            binary=binary,
-            callback=None,
-            parse_method=parse_method,
-            from_page=from_page,
-            to_page=to_page,
-        )
+        try:
+            sections, tables = parser.parse_pdf(
+                filepath=filename,  # used as a display name; actual data is in `binary`
+                binary=binary,
+                callback=None,
+                parse_method=parse_method,
+                from_page=from_page,
+                to_page=to_page,
+            )
+        except Exception as parse_err:
+            if OCR_ONLY_MODE and ocr_engine == "vietocr" and ext == ".pdf":
+                logging.warning("VietOCR unavailable, fallback to pdf text parser: %s", parse_err)
+                sections, tables = _fallback_pdf_text_parse(binary, from_page, to_page)
+            else:
+                raise
 
         # --- format response ---
         section_list = []

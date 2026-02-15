@@ -1,0 +1,135 @@
+# --------------------------------------------------------------------------
+# Dockerfile.ocr-offline – OCR-only API image with offline-ready models
+#
+# Build:
+#   docker build -f Dockerfile.ocr-offline -t ragflow-ocr-offline .
+#
+# Run:
+#   docker run --rm -p 9380:9380 ragflow-ocr-offline
+# --------------------------------------------------------------------------
+
+# base stage – reuse API-only base setup
+FROM ubuntu:24.04 AS base
+USER root
+SHELL ["/bin/bash", "-c"]
+
+ARG NEED_MIRROR=0
+WORKDIR /ragflow
+
+# Copy deepdoc models bundled by deps image so runtime does not need HF download
+RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+    tar --exclude='.*' -cf - \
+        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
+        /huggingface.co/InfiniFlow/deepdoc \
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
+
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    cp -r /deps/nltk_data /root/ && \
+    cp /deps/tika-server-standard-3.2.3.jar /deps/tika-server-standard-3.2.3.jar.md5 /ragflow/ && \
+    cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+
+ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.2.3.jar"
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN if [ "$NEED_MIRROR" == "1" ]; then \
+        sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/ubuntu.sources; \
+    fi; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        libglib2.0-0 \
+        libglx-mesa0 \
+        libgl1 \
+        python3-dev \
+        python3-pip \
+        python3-venv \
+        && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    arch="$(uname -m)"; \
+    if [ "$arch" = "x86_64" ]; then uv_arch="x86_64"; else uv_arch="aarch64"; fi; \
+    tar xzf "/deps/uv-${uv_arch}-unknown-linux-gnu.tar.gz" && \
+    cp "uv-${uv_arch}-unknown-linux-gnu/"* /usr/local/bin/ && \
+    rm -rf "uv-${uv_arch}-unknown-linux-gnu"
+
+# builder stage – install python deps
+FROM base AS builder
+USER root
+WORKDIR /ragflow
+
+COPY pyproject.toml uv.lock ./
+
+RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        sed -i 's|pypi.org|pypi.tuna.tsinghua.edu.cn|g' uv.lock; \
+        uv_index_url="https://pypi.tuna.tsinghua.edu.cn/simple"; \
+    else \
+        sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
+        sed -i 's|https://pypi.tuna.tsinghua.edu.cn/simple|https://pypi.org/simple|g' pyproject.toml; \
+        uv_index_url="https://pypi.org/simple"; \
+    fi; \
+    uv sync --python 3.12 --frozen --default-index "${uv_index_url}" && \
+    .venv/bin/python3 -m ensurepip --upgrade && \
+    .venv/bin/python3 -m pip install --no-cache-dir torch==2.8.0 torchvision==0.23.0 vietocr==0.3.13
+
+COPY .git /ragflow/.git
+RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
+    echo "RAGFlow OCR image version: $version_info"; \
+    echo $version_info > /ragflow/VERSION
+
+# production stage – OCR-only runtime
+FROM base AS production
+USER root
+WORKDIR /ragflow
+
+ENV VIRTUAL_ENV=/ragflow/.venv
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+ENV PYTHONPATH=/ragflow/
+
+COPY api api
+COPY conf conf
+COPY deepdoc deepdoc
+COPY rag rag
+COPY common common
+COPY pyproject.toml uv.lock ./
+COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
+COPY docker/entrypoint.sh ./
+RUN chmod +x ./entrypoint*.sh
+COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+
+# OCR-only stateless runtime (no ES/DB/storage requirements)
+ENV RAGFLOW_OCR_ONLY=1
+ENV DOC_ENGINE=none
+ENV STORAGE_IMPL=MINIO
+ENV VIETOCR_DEVICE=cpu
+ENV VIETOCR_MODEL_NAME=vgg_transformer
+
+# Preload VietOCR checkpoint at build time when network/model source is reachable.
+ARG VIETOCR_WARMUP_STRICT=0
+RUN python - <<'PY'
+import os
+from vietocr.tool.config import Cfg
+from vietocr.tool.predictor import Predictor
+
+try:
+    cfg = Cfg.load_config_from_name("vgg_transformer")
+    cfg["device"] = "cpu"
+    cfg["cnn"]["pretrained"] = False
+    cfg["predictor"]["beamsearch"] = False
+    Predictor(cfg)
+    print("VietOCR model warmup completed")
+except Exception as e:
+    print(f"VietOCR warmup skipped: {e}")
+    if os.environ.get("VIETOCR_WARMUP_STRICT", "0") == "1":
+        raise
+PY
+
+# Verify deepdoc OCR model files are present in image
+RUN test -f /ragflow/rag/res/deepdoc/rec.onnx
+RUN test -f /ragflow/rag/res/deepdoc/det.onnx
+
+EXPOSE 9380
+CMD ["python", "-m", "hypercorn", "api.apps:app", "--bind", "0.0.0.0:9380"]

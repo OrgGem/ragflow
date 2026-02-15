@@ -19,20 +19,45 @@ import sys
 import time
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+
+OCR_ONLY_MODE = os.getenv("RAGFLOW_OCR_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+
 from quart import Blueprint, Quart, request, g, current_app, session, jsonify
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
 from common.constants import StatusEnum, RetCode
-from api.db.db_models import close_connection, APIToken
-from api.db.services import UserService
+if OCR_ONLY_MODE:
+    def close_connection():
+        return None
+
+    APIToken = None
+    UserService = None
+else:
+    from api.db.db_models import close_connection, APIToken
+    from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
-from api.utils import commands
+if OCR_ONLY_MODE:
+    commands = None
+else:
+    from api.utils import commands
 
 from quart_auth import Unauthorized as QuartAuthUnauthorized
 from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
 from quart_schema import QuartSchema
 from common import settings
-from api.utils.api_utils import server_error_response, get_json_result
+if OCR_ONLY_MODE:
+    def get_json_result(code=RetCode.SUCCESS, message="", data=None):
+        payload = {"code": code}
+        if data is not None:
+            payload["data"] = data
+        if message:
+            payload["message"] = message
+        return jsonify(payload)
+
+    def server_error_response(error):
+        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(error))
+else:
+    from api.utils.api_utils import server_error_response, get_json_result
 from api.constants import API_VERSION
 from common.misc_utils import get_uuid
 
@@ -81,7 +106,8 @@ app.config["MAX_CONTENT_LENGTH"] = int(
 )
 app.config['SECRET_KEY'] = settings.SECRET_KEY
 app.secret_key = settings.SECRET_KEY
-commands.register_commands(app)
+if commands is not None:
+    commands.register_commands(app)
 
 from functools import wraps
 from typing import ParamSpec, TypeVar
@@ -93,6 +119,9 @@ P = ParamSpec("P")
 
 
 def _load_user():
+    if OCR_ONLY_MODE:
+        return None
+
     jwt = Serializer(secret_key=settings.SECRET_KEY)
     authorization = request.headers.get("Authorization")
     g.user = None
@@ -124,7 +153,7 @@ def _load_user():
         logging.warning(f"load_user got exception {e_auth}")
         try:
             authorization = request.headers.get("Authorization")
-            if len(authorization.split()) == 2:
+            if APIToken is not None and authorization and len(authorization.split()) == 2:
                 objs = APIToken.query(token=authorization.split()[1])
                 if objs:
                     user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
@@ -261,6 +290,9 @@ _EXCLUDED_RESTFUL = {
 
 
 def search_pages_path(page_path):
+    if OCR_ONLY_MODE:
+        return [path for path in page_path.glob("*sdk/ocr.py") if not path.name.startswith(".")]
+
     app_path_list = [
         path for path in page_path.glob("*_app.py")
         if not path.name.startswith(".") and path.name not in _EXCLUDED_APPS
